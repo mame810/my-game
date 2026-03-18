@@ -1,0 +1,367 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>発教試験 ゲーム版</title>
+<style>
+body{
+  background: radial-gradient(circle,#111,#000);
+  margin:0;
+  overflow:hidden;
+  font-family:"Yu Gothic","MS Gothic",sans-serif;
+  color:white;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  transition: background 0.2s;
+}
+
+#center{
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  text-align:center;
+  opacity:1;
+  transition: opacity 1s;
+}
+
+#monkey{
+  font-size:100px;
+  transition:all 1s;
+}
+
+#title{
+  font-size:36px;
+  letter-spacing:4px;
+  opacity:0;
+  transform:translateY(60px);
+  text-shadow: 0 0 5px white, 0 0 15px white;
+}
+.showText{
+  animation:titleRise 2.5s forwards;
+}
+@keyframes titleRise{
+  0%{ opacity:0; transform:translateY(60px); filter:blur(5px);}
+  50%{ opacity:0.5; filter:blur(2px);}
+  100%{ opacity:1; transform:translateY(0px); filter:blur(0);}
+}
+@keyframes monkeyAppear{
+  0%{ opacity:0; transform:scale(0.6);}
+  100%{ opacity:1; transform:scale(1);}
+}
+.appear{
+  animation:monkeyAppear 1.2s forwards;
+}
+
+#quizContainer{
+  display:none;
+  background:rgba(0,0,0,0.8);
+  border:2px solid #4caf50;
+  box-shadow:0 0 20px #4caf50;
+  border-radius:10px;
+  padding:30px;
+  width:700px;
+  max-width:90%;
+  text-align:center;
+  font-size:18px;
+  opacity:0;
+  transition: opacity 1s;
+}
+#quizContainer.show { opacity: 1; }
+
+#questionContainer{ margin-top:20px; min-height:120px; font-size:22px; }
+#answerFeedback{ margin-top:15px; font-size:20px; }
+
+.choice, button{
+  display:block;
+  margin:10px auto;
+  width:260px;
+  padding:10px;
+  font-size:18px;
+  background:#111;
+  color:white;
+  border:2px solid #4caf50;
+  border-radius:6px;
+  cursor:pointer;
+  transition:0.2s;
+}
+.choice:hover{
+  background:#4caf50;
+  color:black;
+  transform:scale(1.05);
+}
+
+input[type=text]{ margin:10px auto; display:block; width:260px; padding:8px; font-size:18px; }
+
+#timerBarContainer{ width:100%; height:18px; background:#222; border-radius:10px; overflow:hidden; }
+#timerBar{ height:100%; background:linear-gradient(90deg,#4caf50,#8bc34a); transition:width 0.1s linear; }
+
+.correct{color:#4caf50;font-weight:bold;}
+.incorrect{color:#ff4444;font-weight:bold;}
+.hidden{display:none;}
+
+.flash{ animation:flashScreen 0.3s infinite; }
+@keyframes flashScreen{
+  0%{background:#000;}
+  50%{background:#400;}
+  100%{background:#000;}
+}
+</style>
+</head>
+<body>
+
+<div id="center">
+  <div id="monkey">🐵</div>
+  <div id="title">発教プレゼンツ</div>
+</div>
+
+<div id="quizContainer">
+  <h1 style="font-size:24px;margin-bottom:15px;">発教試験</h1>
+  <div id="timerBarContainer"><div id="timerBar"></div></div>
+  <div id="questionContainer"></div>
+  <div id="answerFeedback"></div>
+  <div id="rankDisplay" class="hidden"></div>
+</div>
+
+<audio id="soundCorrect" src="correct.mp3"></audio>
+<audio id="soundWrong" src="wrong.mp3"></audio>
+<audio id="soundTime" src="timeup.mp3"></audio>
+<audio id="soundCount" src="count.mp3"></audio>
+
+<script>
+// --- 演出 ---
+const monkey = document.getElementById("monkey");
+monkey.classList.add("appear");
+setTimeout(()=>{ document.getElementById("title").classList.add("showText"); },1200);
+
+setTimeout(()=>{
+  const center = document.getElementById("center");
+  const quiz = document.getElementById("quizContainer");
+  center.style.opacity=0;
+  setTimeout(()=>{
+    center.style.display='none';
+    quiz.style.display='block';
+    setTimeout(()=> quiz.classList.add('show'),50);
+    initQuiz();
+  },1000);
+},4000);
+
+// --- クイズデータ（40問） ---
+const quizData = [
+  {type:'multiple',question:'発狂を創設した同志として正しい人物をすべて選びなさい',options:['立石','松﨑','村田','山田'],answer:['立石','松﨑']},
+  {type:'single',question:'発教が創設したのはいつか',options:['2022','2024','2023','1917'],answer:'2023'},
+  {type:'single',question:'今年の発教の元号はどれか',options:['廣江','片岡','佐伯','並木'],answer:'並木'},
+  {type:'single',question:'むつみのコラ画像を作成したのはだれか',options:['佐伯','田中','松崎','大脇'],answer:'田中'},
+  {type:'single',question:'隣の家のおっさんがIMP父に文句を言った理由はなにか',options:['WBCが見れなかったから','電気代が高いから','IMPに騙し取られたから','癇癪で理由なくキレた'],answer:'WBCが見られなかったから'},
+  {type:'single',question:'並木正の出身大学はどこ？',options:['帝京平成大学','早稲田大学','東京理科大学','中央大学'],answer:'東京理科大学'},
+  {type:'single',question:'OSOがよく叫ぶ言葉はどれか',options:['静かに','遅いぞ','頑張れ','好きだよ'],answer:'遅いぞ'},
+  {type:'multiple',question:'ゼウスがLINEで発言した言葉をすべて選びなさい',options:['はいはい私がゼウスですよ','Fuck','英語で言ってもらえる？','助けてください'],answer:['はいはい私がゼウスですよ','英語で言ってもらえる？']},
+  {type:'single',question:'邊見彰の通称はどれか',options:['尊師','死神','賢者','仙人'],answer:'死神'},
+  {type:'multiple',question:'この中で内部自治の原則として間違ったのはどれか',options:['教師には常に頼ること','教師の介入は禁止','問題は放置すること','外交戦略の教師介入はできる'],answer:['教師には常に頼ること','問題は放置すること']},
+  {type:'single',question:'筋モンがよく言ってくる言葉はどれか',options:['おつかれ','よお藤澤','殺すぞ','ゆくしこ'],answer:'よお藤澤'},
+  {type:'single',question:'三ツ矢の2学期の期末考査の英語の点数は何点？',options:['9点','13点','6点','38点'],answer:'6点'},
+  {type:'single',question:'ゆくしこの父親の名前として正しいのはどれか',options:['奥島 亮太','奥島 昭夫','奥島 重雄','奥島 秀樹'],answer:'奥島 亮太'},
+  {type:'single',question:'豆の隠語の由来はなにか',options:['好きな食べ物だから','授業での発声練習','教科書のキャラクター','本人が名乗っていた'],answer:'授業での発声練習'},
+  {type:'single',question:'廣江が人気なのはなぜか',options:['休み時間を設けている','自虐ネタが面白い','無くしてもプリントをくれる','毎回テストが簡単'],answer:'無くしてもプリントをくれる'},
+  {type:'boolean',question:'この世にはさるぼぼ妊娠検査薬がある',answer:true},
+  {type:'boolean',question:'スジモンの由来はくるいどりのshortである',answer:true},
+  {type:'boolean',question:'廣江はパソコンやタブレットをコンピュータと呼ぶ',answer:true},
+  {type:'boolean',question:'ゼウスはフラれると一時期話題になった',answer:true},
+  {type:'boolean',question:'テスラとは村田の隠語である',answer:false},
+  {type:'boolean',question:'森ジョニーの名付け親は猿である',answer:false},
+  {type:'boolean',question:'森ジョニーが歩く時の名称は森ジョニーウォークである',answer:false},
+  {type:'boolean',question:'なおからの靴箱には直殻と書いてある',answer:true},
+  {type:'boolean',question:'ハキョアン条約は今も有効である',answer:false},
+  {type:'boolean',question:'ニヒリズムは発教にとって邪道な考えである',answer:false},
+  {type:'boolean',question:'いくイク尹久chの活動が始まったのは2025年夏ほどである',answer:true},
+  {type:'boolean',question:'発教は12個の部署で構成された組織である',answer:false},
+  {type:'boolean',question:'猿船戦争の開戦のきっかけには三ツ矢が関わっている',answer:true},
+  {type:'boolean',question:'直殻は授業中に愚痴や自分語りをする',answer:true},
+  {type:'boolean',question:'道法はTKPがACだと勘違いして親身に相談にのっていた',answer:true},
+  {type:'fill',question:'森ジョニーの名前の由来はなにか',answer:'お鷹の道で悟っているから'},
+  {type:'fill',question:'第一ハキュアンの正式名称をこたえなさい',answer:'薬師児童遊園地'},
+  {type:'fill',question:'君たちに○○を与えていいのか',answer:'自由'},
+  {type:'fill',question:'君はもう○○したほうがいいよ',answer:'就職'},
+  {type:'fill',question:'ウィスパーに使われる警報音はなにか',answer:'ヒヒーン'},
+  {type:'fill',question:'お前たちは○○○が足りないんだよ！',answer:'自浄力'},
+  {type:'fill',question:'豆は元1年B組○○○○○○の担任である',answer:'特別支援学級'},
+  {type:'fill',question:'極道が部活中によく着用してるのはなにか',answer:'サングラス'},
+  {type:'fill',question:'フォレはヘルマン・ヘッセをなんと言い間違えたか',answer:'ヘッセルマン・ヘッセ'},
+  {type:'fill',question:'ゼウスが過去に設立した組織はなにか',answer:'帝国'}
+];
+
+// --- グローバル変数 ---
+let currentIndex=0, correctCount=0, timer, timeLeft, isAnswering=false, shuffledQuestions;
+
+const soundCorrect = document.getElementById("soundCorrect");
+const soundWrong = document.getElementById("soundWrong");
+const soundTime = document.getElementById("soundTime");
+const soundCount = document.getElementById("soundCount");
+
+// --- 初期化 ---
+function initQuiz(){
+  shuffledQuestions = [...quizData];
+  shuffleArray(shuffledQuestions);
+  currentIndex = 0;
+  correctCount = 0;
+  document.getElementById('rankDisplay').classList.add('hidden');
+  document.getElementById('timerBarContainer').style.display="block";
+  document.getElementById('answerFeedback').style.display="block";
+  showQuestion();
+}
+
+// --- シャッフル ---
+function shuffleArray(array){
+  for(let i=array.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [array[i],array[j]]=[array[j],array[i]];
+  }
+}
+
+// --- タイマー ---
+function startTimer(duration){
+  clearInterval(timer);
+  timeLeft = duration;
+  const bar = document.getElementById('timerBar');
+  let lastBeep = Math.ceil(timeLeft);
+  timer = setInterval(()=>{
+    timeLeft -= 0.1;
+    if(timeLeft<0) timeLeft=0;
+    bar.style.width = (timeLeft/duration*100)+'%';
+    let currentSecond = Math.ceil(timeLeft);
+    if(currentSecond!==lastBeep){
+      lastBeep=currentSecond;
+      if(timeLeft<=3) soundCount.playbackRate=2;
+      else if(timeLeft<=5) soundCount.playbackRate=1.5;
+      else soundCount.playbackRate=1;
+      soundCount.currentTime=0; soundCount.play();
+    }
+    if(timeLeft<=3) document.body.classList.add("flash");
+    else document.body.classList.remove("flash");
+    if(timeLeft<=0){
+      clearInterval(timer);
+      document.body.classList.remove("flash");
+      bar.style.width='0%';
+      showFeedback(false,true);
+    }
+  },100);
+}
+
+// --- 問題表示 ---
+function showQuestion(){
+  isAnswering=true;
+  const q = shuffledQuestions[currentIndex];
+  const container = document.getElementById('questionContainer');
+  const feedback = document.getElementById('answerFeedback');
+  container.innerHTML=''; feedback.innerHTML=''; feedback.style.display="block";
+
+  const qElem = document.createElement('div');
+  qElem.innerHTML = `<div style="margin-bottom:15px;font-size:18px;color:#aaa">${currentIndex+1} / ${shuffledQuestions.length}</div>
+                     <div style="font-size:24px;margin-bottom:20px">${q.question}</div>`;
+  container.appendChild(qElem);
+
+  let duration = (q.type==='fill')?20:10;
+  startTimer(duration);
+
+  if(q.type==='single'){
+    q.options.forEach(opt=>{
+      const btn=document.createElement('button');
+      btn.className='choice'; btn.textContent=opt;
+      btn.onclick=()=>checkAnswer(opt);
+      container.appendChild(btn);
+    });
+  } else if(q.type==='multiple'){
+    q.options.forEach(opt=>{
+      const label=document.createElement('label');
+      label.className='choice';
+      const cb=document.createElement('input'); cb.type='checkbox'; cb.value=opt;
+      label.appendChild(cb); label.appendChild(document.createTextNode(opt));
+      container.appendChild(label);
+    });
+    const submitBtn = document.createElement('button');
+    submitBtn.className='choice'; submitBtn.textContent='回答';
+    submitBtn.onclick=()=>checkAnswer();
+    container.appendChild(submitBtn);
+  } else if(q.type==='boolean'){
+    const btnTrue=document.createElement('button');
+    btnTrue.className='choice'; btnTrue.textContent='〇'; btnTrue.onclick=()=>checkAnswer(true);
+    const btnFalse=document.createElement('button');
+    btnFalse.className='choice'; btnFalse.textContent='×'; btnFalse.onclick=()=>checkAnswer(false);
+    container.appendChild(btnTrue); container.appendChild(btnFalse);
+  } else if(q.type==='fill'){
+    const input=document.createElement('input'); input.type='text'; input.id='fillInput';
+    container.appendChild(input);
+    const submitBtn = document.createElement('button');
+    submitBtn.className='choice'; submitBtn.textContent='回答';
+    submitBtn.onclick=()=>checkAnswer(document.getElementById('fillInput').value);
+    container.appendChild(submitBtn);
+  }
+}
+
+// --- 判定 ---
+function checkAnswer(selected){
+  if(!isAnswering) return;
+  clearInterval(timer);
+  document.body.classList.remove("flash");
+  isAnswering=false;
+  const q=shuffledQuestions[currentIndex];
+  let correct=false;
+
+  if(q.type==='single') correct = (selected===q.answer);
+  else if(q.type==='boolean') correct = (selected===q.answer);
+  else if(q.type==='fill'){
+    correct = selected.trim()===q.answer || (q.keywords && q.keywords.every(k=>selected.includes(k)));
+  }
+  else if(q.type==='multiple'){
+    const checkboxes = Array.from(document.querySelectorAll('#questionContainer input[type=checkbox]'));
+    const checked = checkboxes.filter(cb=>cb.checked).map(cb=>cb.value);
+    correct = JSON.stringify(checked.sort())===JSON.stringify(q.answer.sort());
+  }
+
+  if(correct) correctCount++;
+  showFeedback(correct);
+}
+
+// --- フィードバック ---
+function showFeedback(correct,timeup=false){
+  const feedback = document.getElementById('answerFeedback');
+  if(correct){
+    feedback.innerHTML = `<span class="correct">正解！</span>`;
+    soundCorrect.currentTime=0; soundCorrect.play();
+  } else {
+    feedback.innerHTML = `<span class="incorrect">${timeup?'時間切れ！':'不正解！'}</span>`;
+    soundWrong.currentTime=0; soundWrong.play();
+  }
+  setTimeout(nextQuestion,1000);
+}
+
+// --- 次の問題 ---
+function nextQuestion(){
+  currentIndex++;
+  if(currentIndex>=shuffledQuestions.length) showRank();
+  else showQuestion();
+}
+
+// --- ランク表示 ---
+function showRank(){
+  const rankEl = document.getElementById('rankDisplay');
+  rankEl.classList.remove('hidden');
+  let rank='D';
+  const p = correctCount/shuffledQuestions.length;
+  if(p>=0.9) rank='S';
+  else if(p>=0.75) rank='A';
+  else if(p>=0.5) rank='B';
+  else if(p>=0.25) rank='C';
+  rankEl.textContent=`正解数: ${correctCount}/${shuffledQuestions.length} ランク: ${rank}`;
+  document.getElementById('questionContainer').innerHTML='';
+  document.getElementById('answerFeedback').style.display='none';
+  document.getElementById('timerBarContainer').style.display='none';
+}
+
+// --- Rキーでリスタート ---
+document.addEventListener('keydown',e=>{ if(e.key==='r'||e.key==='R') initQuiz(); });
+</script>
+</body>
+</html>
